@@ -167,7 +167,7 @@ export default function NotesPage() {
             <div className="relative">
               <select
                 value={selectedNote.project_id || ""}
-                onChange={e => handleNoteChange("project_id", e.target.value || null)}
+                onChange={e => handleNoteChange("project_id", e.target.value || "")}
                 className="appearance-none bg-surface border border-surface-border rounded-lg pl-3 pr-7 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary/50"
               >
                 <option value="">Sin proyecto</option>
