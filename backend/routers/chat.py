@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from core.supabase import supabase, get_current_user
@@ -132,6 +132,11 @@ async def call_openrouter(messages: list, use_tools: bool = True) -> dict:
             headers=headers,
             json=body,
         )
+        if response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="Límite de requests del modelo gratuito alcanzado. Intenta más tarde o cambia el modelo en configuración."
+            )
         response.raise_for_status()
         return response.json()
 
