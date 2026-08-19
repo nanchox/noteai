@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { notesApi, projectsApi } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import {
   Plus, Search, Pin, Trash2, Upload, X, FolderOpen, ChevronDown
 } from "lucide-react";
@@ -16,38 +17,60 @@ function NotesContent() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false); // sesión lista
   const saveTimer = useRef<NodeJS.Timeout>();
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Esperar a que haya sesión antes de cargar datos
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setReady(true);
+    });
+  }, []);
+
   const loadNotes = useCallback(async () => {
-    const data = await notesApi.list({ project_id: activeProject || undefined, search: search || undefined });
-    setNotes(data);
-    setLoading(false);
-  }, [activeProject, search]);
+    if (!ready) return;
+    try {
+      const params: any = {};
+      if (activeProject) params.project_id = activeProject;
+      if (search) params.search = search;
+      const data = await notesApi.list(params);
+      setNotes(data);
+    } catch (e) {
+      console.error("Error cargando notas:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeProject, search, ready]);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
 
   useEffect(() => {
-    const id = searchParams.get("id");
-    if (id) {
-      notesApi.get(id).then(setSelectedNote);
-    }
-  }, [searchParams]);
+    if (!ready) return;
+    projectsApi.list().then(setProjects).catch(console.error);
+  }, [ready]);
 
   useEffect(() => {
-    projectsApi.list().then(setProjects);
-  }, []);
+    const id = searchParams.get("id");
+    if (id && ready) {
+      notesApi.get(id).then(setSelectedNote).catch(console.error);
+    }
+  }, [searchParams, ready]);
 
   const handleNoteChange = (field: string, value: string) => {
     if (!selectedNote) return;
+    const noteId = selectedNote.id;
     const updated = { ...selectedNote, [field]: value };
     setSelectedNote(updated);
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, [field]: value } : n));
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSaving(true);
-      await notesApi.update(selectedNote.id, { [field]: value });
-      setSaving(false);
-      setNotes(prev => prev.map(n => n.id === selectedNote.id ? { ...n, [field]: value } : n));
+      try {
+        await notesApi.update(noteId, { [field]: value });
+      } finally {
+        setSaving(false);
+      }
     }, 800);
   };
 
@@ -66,6 +89,7 @@ function NotesContent() {
   const togglePin = async (note: any) => {
     const updated = await notesApi.update(note.id, { is_pinned: !note.is_pinned });
     setNotes(prev => prev.map(n => n.id === note.id ? updated : n));
+    setSelectedNote(updated);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,7 +141,11 @@ function NotesContent() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {loading && <p className="text-sm text-gray-500 p-4">Cargando...</p>}
+          {loading && (
+            <div className="flex justify-center py-8">
+              <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
           {!loading && notes.length === 0 && (
             <div className="p-4 text-center">
               <p className="text-sm text-gray-500">Sin notas</p>
@@ -169,7 +197,7 @@ function NotesContent() {
             </div>
 
             <div className="flex-1" />
-            {saving && <span className="text-xs text-gray-500">Guardando...</span>}
+            {saving && <span className="text-xs text-gray-500 animate-pulse">Guardando...</span>}
 
             <button onClick={() => togglePin(selectedNote)}
               className={clsx("p-1.5 rounded-lg transition-colors", selectedNote.is_pinned ? "text-accent" : "text-gray-500 hover:text-white")}>

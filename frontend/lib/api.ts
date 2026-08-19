@@ -2,6 +2,19 @@ import { getAuthToken } from "./supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Filtra undefined, null, "undefined", "null" y strings vacíos
+function buildParams(params?: Record<string, any>): string {
+  if (!params) return "";
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "undefined" && v !== "null" && v !== "") {
+      clean[k] = String(v);
+    }
+  }
+  const qs = new URLSearchParams(clean).toString();
+  return qs ? `?${qs}` : "";
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getAuthToken();
   const res = await fetch(`${API_URL}${path}`, {
@@ -11,6 +24,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
+    redirect: "follow",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Error del servidor" }));
@@ -22,7 +36,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // ── Notes ─────────────────────────────────────────────────
 export const notesApi = {
   list: (params?: { project_id?: string; search?: string; archived?: boolean }) =>
-    request<any[]>(`/api/notes?${new URLSearchParams(params as any)}`),
+    request<any[]>(`/api/notes/${buildParams(params)}`),
   get: (id: string) => request<any>(`/api/notes/${id}`),
   create: (data: any) => request<any>("/api/notes/", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: any) => request<any>(`/api/notes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -53,7 +67,7 @@ export const projectsApi = {
 // ── Tasks ──────────────────────────────────────────────────
 export const tasksApi = {
   list: (params?: { project_id?: string; completed?: boolean; priority?: string }) =>
-    request<any[]>(`/api/tasks/?${new URLSearchParams(params as any)}`),
+    request<any[]>(`/api/tasks/${buildParams(params)}`),
   create: (data: any) => request<any>("/api/tasks/", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: any) => request<any>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/api/tasks/${id}`, { method: "DELETE" }),
