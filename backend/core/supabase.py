@@ -13,29 +13,29 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
     """
-    Verifica el JWT de Supabase y retorna el usuario autenticado.
-    Usado como dependency en todos los endpoints protegidos.
+    Verifica el JWT de Supabase con el JWT Secret y retorna el usuario autenticado.
     """
     token = credentials.credentials
     try:
-        # Decodificar JWT sin verificar firma localmente
-        # Supabase lo verifica con su clave interna
+        # Verificar con el JWT secret real de Supabase
         payload = jwt.decode(
             token,
-            options={"verify_signature": False}
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False}  # Supabase no usa audience estándar
         )
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Token inválido")
-        
+
         # Verificar que el usuario existe en profiles
         result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
         if not result.data:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
-        
+
         return result.data
-    except jwt.DecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido o expirado"
-        )
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")

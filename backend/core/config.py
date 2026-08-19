@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: str
     SUPABASE_SERVICE_KEY: str      # Service role key (solo backend)
-    SUPABASE_ANON_KEY: str         # Anon key (para verificar JWT)
+    SUPABASE_ANON_KEY: str         # Anon key
+    SUPABASE_JWT_SECRET: str       # JWT Secret (Supabase → Settings → API → JWT Secret)
 
     # Anthropic
     ANTHROPIC_API_KEY: str
