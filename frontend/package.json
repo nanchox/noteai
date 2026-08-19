@@ -18,7 +18,8 @@
     "lucide-react": "^0.400.0",
     "react-markdown": "^9.0.0",
     "date-fns": "^3.6.0",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
     "typescript": "^5",
