@@ -6,7 +6,10 @@ from core.config import settings
 import anthropic, json, re
 
 router = APIRouter()
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+client = anthropic.Anthropic(
+    api_key=settings.ANTHROPIC_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+)
 
 class ChatRequest(BaseModel):
     message: str
@@ -130,7 +133,7 @@ Cuando crees algo, confirma qué creaste de forma amigable. Si el usuario no esp
 Sé conciso, útil y proactivo. Si ves tareas vencidas o urgentes, menciónalas."""
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=settings.AI_MODEL,
         max_tokens=1024,
         system=system_prompt,
         tools=TOOLS,
