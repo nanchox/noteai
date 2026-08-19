@@ -6,15 +6,16 @@ import { supabase } from "@/lib/supabase";
 import { remindersApi } from "@/lib/api";
 import {
   LayoutDashboard, FileText, CheckSquare, MessageSquare,
-  LogOut, Sparkles, Bell
+  LogOut, Sparkles, Bell, FolderOpen
 } from "lucide-react";
 import clsx from "clsx";
 
 const NAV = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard },
+  { href: "/dashboard/projects", label: "Proyectos", icon: FolderOpen },
   { href: "/dashboard/notes", label: "Notas", icon: FileText },
   { href: "/dashboard/tasks", label: "Tareas", icon: CheckSquare },
-  { href: "/dashboard/chat", label: "Asistente IA", icon: MessageSquare },
+  { href: "/dashboard/chat", label: "IA", icon: MessageSquare },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
