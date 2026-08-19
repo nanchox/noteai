@@ -3,109 +3,187 @@ from pydantic import BaseModel
 from typing import Optional
 from core.supabase import supabase, get_current_user
 from core.config import settings
-import anthropic
+import anthropic, json, re
 
 router = APIRouter()
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 class ChatRequest(BaseModel):
     message: str
-    project_id: Optional[str] = None   # contexto opcional: proyecto activo
+    project_id: Optional[str] = None
+
+TOOLS = [
+    {
+        "name": "create_note",
+        "description": "Crea una nota nueva con título y contenido",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Título de la nota"},
+                "content": {"type": "string", "description": "Contenido de la nota en markdown"},
+                "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
+            },
+            "required": ["title", "content"]
+        }
+    },
+    {
+        "name": "create_task",
+        "description": "Crea una tarea nueva con título, prioridad y fecha límite opcional",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Título de la tarea"},
+                "description": {"type": "string", "description": "Descripción opcional"},
+                "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "description": "Prioridad"},
+                "due_date": {"type": "string", "description": "Fecha límite en formato ISO (YYYY-MM-DD), opcional"},
+                "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
+            },
+            "required": ["title", "priority"]
+        }
+    }
+]
 
 def get_user_context(user_id: str, project_id: Optional[str], query: str) -> str:
-    """Construye contexto con notas y tareas relevantes del usuario."""
-    
-    # Traer notas recientes relevantes
     notes_query = supabase.table("notes").select(
         "title, content, updated_at, projects(name)"
     ).eq("user_id", user_id).eq("is_archived", False).order("updated_at", desc=True)
-    
     if project_id:
         notes_query = notes_query.eq("project_id", project_id)
-    
-    # Buscar notas que coincidan con la consulta
-    notes_query = notes_query.or_(f"title.ilike.%{query[:50]}%,content.ilike.%{query[:50]}%").limit(5)
-    notes = notes_query.execute().data
-
-    # Si no hay coincidencias, tomar las 3 más recientes
+    notes = notes_query.or_(f"title.ilike.%{query[:40]}%,content.ilike.%{query[:40]}%").limit(5).execute().data
     if not notes:
         notes = supabase.table("notes").select(
             "title, content, updated_at, projects(name)"
         ).eq("user_id", user_id).eq("is_archived", False).order("updated_at", desc=True).limit(3).execute().data
 
-    # Tareas pendientes
     tasks = supabase.table("tasks").select(
-        "title, priority, due_date, projects(name)"
+        "title, priority, due_date, is_completed, projects(name)"
     ).eq("user_id", user_id).eq("is_completed", False).order("due_date").limit(10).execute().data
 
-    # Formatear contexto
-    context_parts = []
-    
+    projects = supabase.table("projects").select("id, name, icon").eq("user_id", user_id).execute().data
+
+    parts = []
+    if projects:
+        parts.append("📂 PROYECTOS DEL USUARIO:")
+        for p in projects:
+            parts.append(f"  - {p['icon']} {p['name']} (id: {p['id']})")
     if notes:
-        context_parts.append("📝 NOTAS RECIENTES DEL USUARIO:")
+        parts.append("\n📝 NOTAS RECIENTES:")
         for n in notes:
-            project_name = n.get("projects", {}).get("name", "Sin proyecto") if n.get("projects") else "Sin proyecto"
-            content_preview = n["content"][:300] if n["content"] else "(vacía)"
-            context_parts.append(f"- [{project_name}] {n['title']}: {content_preview}")
-    
+            pname = n.get("projects", {}).get("name", "Sin proyecto") if n.get("projects") else "Sin proyecto"
+            parts.append(f"  - [{pname}] {n['title']}: {(n['content'] or '')[:200]}")
     if tasks:
-        context_parts.append("\n✅ TAREAS PENDIENTES:")
+        parts.append("\n✅ TAREAS PENDIENTES:")
         for t in tasks:
-            project_name = t.get("projects", {}).get("name", "") if t.get("projects") else ""
+            pname = t.get("projects", {}).get("name", "") if t.get("projects") else ""
             due = f" (vence: {t['due_date'][:10]})" if t.get("due_date") else ""
-            context_parts.append(f"- [{t['priority'].upper()}] {t['title']}{due} {project_name}")
-    
-    return "\n".join(context_parts) if context_parts else "El usuario no tiene notas ni tareas aún."
+            parts.append(f"  - [{t['priority'].upper()}] {t['title']}{due} {pname}")
+    return "\n".join(parts) if parts else "Sin notas ni tareas aún."
+
+def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Optional[str]) -> dict:
+    """Ejecuta la herramienta solicitada por Claude y retorna el resultado."""
+    if tool_name == "create_note":
+        pid = tool_input.get("project_id") or project_id or None
+        result = supabase.table("notes").insert({
+            "user_id": user_id,
+            "title": tool_input["title"],
+            "content": tool_input["content"],
+            "project_id": pid,
+        }).execute()
+        return {"created": "note", "id": result.data[0]["id"], "title": tool_input["title"]}
+
+    elif tool_name == "create_task":
+        pid = tool_input.get("project_id") or project_id or None
+        due = tool_input.get("due_date")
+        result = supabase.table("tasks").insert({
+            "user_id": user_id,
+            "title": tool_input["title"],
+            "description": tool_input.get("description"),
+            "priority": tool_input.get("priority", "medium"),
+            "due_date": f"{due}T00:00:00+00:00" if due else None,
+            "project_id": pid,
+        }).execute()
+        return {"created": "task", "id": result.data[0]["id"], "title": tool_input["title"]}
+
+    return {"error": "Herramienta desconocida"}
 
 @router.post("/")
 async def chat(request: ChatRequest, user=Depends(get_current_user)):
-    """Endpoint del asistente IA con contexto de notas y tareas."""
-    
-    # Construir contexto personalizado
     user_context = get_user_context(user["id"], request.project_id, request.message)
-    
-    # Historial reciente (últimos 10 mensajes)
+
     history = supabase.table("chat_messages").select("role, content").eq(
         "user_id", user["id"]
-    ).order("created_at", desc=True).limit(10).execute().data
-    
+    ).order("created_at", desc=True).limit(8).execute().data
     history_messages = [{"role": m["role"], "content": m["content"]} for m in reversed(history)]
     history_messages.append({"role": "user", "content": request.message})
 
-    # Llamar a Claude
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=f"""Eres NoteAI, un asistente personal inteligente y amigable para tomar notas, 
-gestionar tareas y proyectos. Hablas en español colombiano de manera natural y cercana.
+    system_prompt = f"""Eres NoteAI, un asistente personal inteligente y amigable. Hablas en español colombiano natural y cercano.
 
 Tienes acceso al contexto actual del usuario:
 {user_context}
 
-Tus capacidades:
-- Ayudar a encontrar y resumir notas
-- Recordar tareas pendientes y alertar sobre vencimientos
-- Sugerir cómo organizar proyectos
-- Responder consultas usando la información del usuario
-- Dar consejos de productividad personalizados
+Puedes crear notas y tareas directamente usando las herramientas disponibles cuando el usuario te lo pida, por ejemplo:
+- "crea una nota sobre...", "anota que...", "escribe una nota..."
+- "crea una tarea para...", "agrega un pendiente de...", "recuérdame hacer..."
 
-Sé conciso, útil y proactivo. Si ves tareas vencidas o urgentes, menciónalas.""",
+Cuando crees algo, confirma qué creaste de forma amigable. Si el usuario no especifica proyecto, usa el contexto para inferirlo o déjalo sin proyecto.
+
+Sé conciso, útil y proactivo. Si ves tareas vencidas o urgentes, menciónalas."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        system=system_prompt,
+        tools=TOOLS,
         messages=history_messages,
     )
-    
-    assistant_reply = response.content[0].text
-    
-    # Guardar en historial
+
+    tool_results = []
+    assistant_text = ""
+
+    # Procesar respuesta y herramientas
+    for block in response.content:
+        if block.type == "text":
+            assistant_text += block.text
+        elif block.type == "tool_use":
+            result = execute_tool(block.name, block.input, user["id"], request.project_id)
+            tool_results.append({"tool": block.name, "result": result, "tool_use_id": block.id})
+
+    # Si usó herramientas, hacer segunda llamada para obtener respuesta final
+    if tool_results:
+        messages_with_tools = history_messages + [
+            {"role": "assistant", "content": response.content},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": tr["tool_use_id"], "content": json.dumps(tr["result"])}
+                for tr in tool_results
+            ]}
+        ]
+        final = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=512,
+            system=system_prompt,
+            tools=TOOLS,
+            messages=messages_with_tools,
+        )
+        for block in final.content:
+            if hasattr(block, "text"):
+                assistant_text += block.text
+
+    if not assistant_text:
+        assistant_text = "Listo, lo hice por ti."
+
+    # Guardar historial
     supabase.table("chat_messages").insert([
         {"user_id": user["id"], "role": "user", "content": request.message},
-        {"user_id": user["id"], "role": "assistant", "content": assistant_reply},
+        {"user_id": user["id"], "role": "assistant", "content": assistant_text},
     ]).execute()
-    
-    return {"reply": assistant_reply}
+
+    return {
+        "reply": assistant_text,
+        "actions": [tr["result"] for tr in tool_results]
+    }
 
 @router.get("/history")
 async def get_history(limit: int = 20, user=Depends(get_current_user)):
-    """Historial del chat del usuario."""
     result = supabase.table("chat_messages").select("*").eq(
         "user_id", user["id"]
     ).order("created_at", desc=True).limit(limit).execute()
@@ -113,6 +191,5 @@ async def get_history(limit: int = 20, user=Depends(get_current_user)):
 
 @router.delete("/history")
 async def clear_history(user=Depends(get_current_user)):
-    """Borra el historial del chat."""
     supabase.table("chat_messages").delete().eq("user_id", user["id"]).execute()
     return {"message": "Historial borrado"}

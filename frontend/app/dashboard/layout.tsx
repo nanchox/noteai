@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { remindersApi } from "@/lib/api";
 import {
   LayoutDashboard, FileText, CheckSquare, MessageSquare,
-  LogOut, Sparkles, Bell, FolderOpen
+  LogOut, Sparkles, Bell, FolderOpen, Kanban, Search
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -15,6 +15,8 @@ const NAV = [
   { href: "/dashboard/projects", label: "Proyectos", icon: FolderOpen },
   { href: "/dashboard/notes", label: "Notas", icon: FileText },
   { href: "/dashboard/tasks", label: "Tareas", icon: CheckSquare },
+  { href: "/dashboard/kanban", label: "Kanban", icon: Kanban },
+  { href: "/dashboard/search", label: "Buscar", icon: Search },
   { href: "/dashboard/chat", label: "IA", icon: MessageSquare },
 ];
 
