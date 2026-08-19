@@ -11,20 +11,16 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """
-    Verifica el JWT preguntándole a Supabase directamente.
-    Compatible con el nuevo sistema de JWT Signing Keys de Supabase.
-    """
     token = credentials.credentials
     try:
-        # Supabase verifica el token y retorna el usuario
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{settings.SUPABASE_URL}/auth/v1/user",
                 headers={
                     "Authorization": f"Bearer {token}",
                     "apikey": settings.SUPABASE_ANON_KEY,
-                }
+                },
+                timeout=10.0
             )
 
         if response.status_code != 200:
@@ -36,7 +32,6 @@ async def get_current_user(
         if not user_id:
             raise HTTPException(status_code=401, detail="Token sin usuario")
 
-        # Buscar perfil en la tabla profiles
         result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
         if not result.data:
             raise HTTPException(status_code=401, detail="Perfil no encontrado")

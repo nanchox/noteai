@@ -2,16 +2,10 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    # Supabase
     SUPABASE_URL: str
-    SUPABASE_SERVICE_KEY: str      # Service role key (solo backend)
-    SUPABASE_ANON_KEY: str         # Anon key
-    SUPABASE_JWT_SECRET: str       # JWT Secret (Supabase → Settings → API → JWT Secret)
-
-    # Anthropic
+    SUPABASE_SERVICE_KEY: str
+    SUPABASE_ANON_KEY: str
     ANTHROPIC_API_KEY: str
-
-    # App
     FRONTEND_URL: str = "http://localhost:3000"
     ENVIRONMENT: str = "development"
 
