@@ -28,9 +28,19 @@ async def get_current_user(
 
         user_data = response.json()
         user_id = user_data.get("id")
+        user_email = user_data.get("email", "").lower()
 
         if not user_id:
             raise HTTPException(status_code=401, detail="Token sin usuario")
+
+        # ── Lista blanca de correos autorizados ──────────────────
+        allowed_emails = [e.strip().lower() for e in settings.ALLOWED_EMAILS.split(",")]
+        if user_email not in allowed_emails:
+            raise HTTPException(
+                status_code=403,
+                detail="Acceso no autorizado. Este correo no tiene permiso para usar la app."
+            )
+        # ─────────────────────────────────────────────────────────
 
         result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
         if not result.data:
