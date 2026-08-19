@@ -3,45 +3,48 @@ from pydantic import BaseModel
 from typing import Optional
 from core.supabase import supabase, get_current_user
 from core.config import settings
-import anthropic, json, re
+import httpx, json
 
 router = APIRouter()
-client = anthropic.Anthropic(
-    api_key=settings.ANTHROPIC_API_KEY,
-    base_url="https://openrouter.ai/api/v1",
-)
 
 class ChatRequest(BaseModel):
     message: str
     project_id: Optional[str] = None
 
+# Herramientas en formato OpenAI (compatible con OpenRouter)
 TOOLS = [
     {
-        "name": "create_note",
-        "description": "Crea una nota nueva con título y contenido",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Título de la nota"},
-                "content": {"type": "string", "description": "Contenido de la nota en markdown"},
-                "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
-            },
-            "required": ["title", "content"]
+        "type": "function",
+        "function": {
+            "name": "create_note",
+            "description": "Crea una nota nueva con título y contenido",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Título de la nota"},
+                    "content": {"type": "string", "description": "Contenido en markdown"},
+                    "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
+                },
+                "required": ["title", "content"]
+            }
         }
     },
     {
-        "name": "create_task",
-        "description": "Crea una tarea nueva con título, prioridad y fecha límite opcional",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Título de la tarea"},
-                "description": {"type": "string", "description": "Descripción opcional"},
-                "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "description": "Prioridad"},
-                "due_date": {"type": "string", "description": "Fecha límite en formato ISO (YYYY-MM-DD), opcional"},
-                "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
-            },
-            "required": ["title", "priority"]
+        "type": "function",
+        "function": {
+            "name": "create_task",
+            "description": "Crea una tarea nueva",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Título de la tarea"},
+                    "description": {"type": "string", "description": "Descripción opcional"},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+                    "due_date": {"type": "string", "description": "Fecha en formato YYYY-MM-DD (opcional)"},
+                    "project_id": {"type": "string", "description": "ID del proyecto (opcional)"}
+                },
+                "required": ["title", "priority"]
+            }
         }
     }
 ]
@@ -59,14 +62,14 @@ def get_user_context(user_id: str, project_id: Optional[str], query: str) -> str
         ).eq("user_id", user_id).eq("is_archived", False).order("updated_at", desc=True).limit(3).execute().data
 
     tasks = supabase.table("tasks").select(
-        "title, priority, due_date, is_completed, projects(name)"
+        "title, priority, due_date, projects(name)"
     ).eq("user_id", user_id).eq("is_completed", False).order("due_date").limit(10).execute().data
 
     projects = supabase.table("projects").select("id, name, icon").eq("user_id", user_id).execute().data
 
     parts = []
     if projects:
-        parts.append("📂 PROYECTOS DEL USUARIO:")
+        parts.append("📂 PROYECTOS:")
         for p in projects:
             parts.append(f"  - {p['icon']} {p['name']} (id: {p['id']})")
     if notes:
@@ -83,7 +86,6 @@ def get_user_context(user_id: str, project_id: Optional[str], query: str) -> str
     return "\n".join(parts) if parts else "Sin notas ni tareas aún."
 
 def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Optional[str]) -> dict:
-    """Ejecuta la herramienta solicitada por Claude y retorna el resultado."""
     if tool_name == "create_note":
         pid = tool_input.get("project_id") or project_id or None
         result = supabase.table("notes").insert({
@@ -93,7 +95,6 @@ def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Opt
             "project_id": pid,
         }).execute()
         return {"created": "note", "id": result.data[0]["id"], "title": tool_input["title"]}
-
     elif tool_name == "create_task":
         pid = tool_input.get("project_id") or project_id or None
         due = tool_input.get("due_date")
@@ -106,8 +107,33 @@ def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Opt
             "project_id": pid,
         }).execute()
         return {"created": "task", "id": result.data[0]["id"], "title": tool_input["title"]}
-
     return {"error": "Herramienta desconocida"}
+
+async def call_openrouter(messages: list, use_tools: bool = True) -> dict:
+    """Llama a OpenRouter con formato OpenAI."""
+    headers = {
+        "Authorization": f"Bearer {settings.ANTHROPIC_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://noteai-app.vercel.app",
+        "X-Title": "NoteAI",
+    }
+    body = {
+        "model": settings.AI_MODEL,
+        "messages": messages,
+        "max_tokens": 1024,
+    }
+    if use_tools:
+        body["tools"] = TOOLS
+        body["tool_choice"] = "auto"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=body,
+        )
+        response.raise_for_status()
+        return response.json()
 
 @router.post("/")
 async def chat(request: ChatRequest, user=Depends(get_current_user)):
@@ -116,63 +142,56 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
     history = supabase.table("chat_messages").select("role, content").eq(
         "user_id", user["id"]
     ).order("created_at", desc=True).limit(8).execute().data
-    history_messages = [{"role": m["role"], "content": m["content"]} for m in reversed(history)]
-    history_messages.append({"role": "user", "content": request.message})
 
     system_prompt = f"""Eres NoteAI, un asistente personal inteligente y amigable. Hablas en español colombiano natural y cercano.
 
 Tienes acceso al contexto actual del usuario:
 {user_context}
 
-Puedes crear notas y tareas directamente usando las herramientas disponibles cuando el usuario te lo pida, por ejemplo:
+Puedes crear notas y tareas directamente cuando el usuario te lo pida:
 - "crea una nota sobre...", "anota que...", "escribe una nota..."
-- "crea una tarea para...", "agrega un pendiente de...", "recuérdame hacer..."
+- "crea una tarea para...", "agrega un pendiente de...", "recuérdame..."
 
-Cuando crees algo, confirma qué creaste de forma amigable. Si el usuario no especifica proyecto, usa el contexto para inferirlo o déjalo sin proyecto.
+Cuando crees algo, confirma amigablemente qué creaste. Sé conciso y útil."""
 
-Sé conciso, útil y proactivo. Si ves tareas vencidas o urgentes, menciónalas."""
+    messages = [{"role": "system", "content": system_prompt}]
+    for m in reversed(history):
+        messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": request.message})
 
-    response = client.messages.create(
-        model=settings.AI_MODEL,
-        max_tokens=1024,
-        system=system_prompt,
-        tools=TOOLS,
-        messages=history_messages,
-    )
+    # Primera llamada
+    data = await call_openrouter(messages)
+    choice = data["choices"][0]
+    finish_reason = choice.get("finish_reason")
+    msg = choice["message"]
 
     tool_results = []
-    assistant_text = ""
+    assistant_text = msg.get("content") or ""
 
-    # Procesar respuesta y herramientas
-    for block in response.content:
-        if block.type == "text":
-            assistant_text += block.text
-        elif block.type == "tool_use":
-            result = execute_tool(block.name, block.input, user["id"], request.project_id)
-            tool_results.append({"tool": block.name, "result": result, "tool_use_id": block.id})
+    # Procesar tool calls si las hay
+    if finish_reason == "tool_calls" and msg.get("tool_calls"):
+        # Agregar respuesta del asistente con tool_calls al historial
+        messages.append(msg)
 
-    # Si usó herramientas, hacer segunda llamada para obtener respuesta final
-    if tool_results:
-        messages_with_tools = history_messages + [
-            {"role": "assistant", "content": response.content},
-            {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": tr["tool_use_id"], "content": json.dumps(tr["result"])}
-                for tr in tool_results
-            ]}
-        ]
-        final = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=512,
-            system=system_prompt,
-            tools=TOOLS,
-            messages=messages_with_tools,
-        )
-        for block in final.content:
-            if hasattr(block, "text"):
-                assistant_text += block.text
+        for tc in msg["tool_calls"]:
+            fn_name = tc["function"]["name"]
+            fn_args = json.loads(tc["function"]["arguments"])
+            result = execute_tool(fn_name, fn_args, user["id"], request.project_id)
+            tool_results.append({"tool": fn_name, "result": result})
+
+            # Agregar resultado de la herramienta
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": json.dumps(result),
+            })
+
+        # Segunda llamada para respuesta final
+        final = await call_openrouter(messages, use_tools=False)
+        assistant_text = final["choices"][0]["message"].get("content") or "Listo, lo hice."
 
     if not assistant_text:
-        assistant_text = "Listo, lo hice por ti."
+        assistant_text = "Listo."
 
     # Guardar historial
     supabase.table("chat_messages").insert([
@@ -180,10 +199,7 @@ Sé conciso, útil y proactivo. Si ves tareas vencidas o urgentes, menciónalas.
         {"user_id": user["id"], "role": "assistant", "content": assistant_text},
     ]).execute()
 
-    return {
-        "reply": assistant_text,
-        "actions": [tr["result"] for tr in tool_results]
-    }
+    return {"reply": assistant_text, "actions": [tr["result"] for tr in tool_results]}
 
 @router.get("/history")
 async def get_history(limit: int = 20, user=Depends(get_current_user)):
