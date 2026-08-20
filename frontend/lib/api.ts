@@ -85,6 +85,9 @@ export const chatApi = {
 // ── Reminders ──────────────────────────────────────────────
 export const remindersApi = {
   pending: () => request<any[]>("/api/reminders/pending"),
+  upcoming: () => request<any[]>("/api/reminders/upcoming"),
   create: (data: any) => request<any>("/api/reminders/", { method: "POST", body: JSON.stringify(data) }),
   dismiss: (id: string) => request<any>(`/api/reminders/${id}/dismiss`, { method: "PATCH" }),
+  delete: (id: string) => request<any>(`/api/reminders/${id}`, { method: "DELETE" }),
+  weeklySummary: () => request<any>("/api/reminders/weekly-summary"),
 };
