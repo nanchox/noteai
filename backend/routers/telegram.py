@@ -153,6 +153,33 @@ async def call_ai_with_history(messages: list) -> dict:
 
     return {"text": text, "actions": actions}
 
+def parse_due_date(due: str) -> str | None:
+    """Convierte cualquier formato de fecha a ISO para PostgreSQL."""
+    if not due:
+        return None
+    import re
+    from datetime import datetime
+    # Ya está en formato YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", due.strip()):
+        return f"{due.strip()}T00:00:00+00:00"
+    # Intentar parsear formatos comunes
+    formats = [
+        "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
+        "%d/%m/%Y %H:%M", "%Y/%m/%d",
+        "%d de %B de %Y", "%B %d, %Y",
+    ]
+    # Quitar texto extra (ej: "7 am", "3pm", etc.)
+    clean = re.sub(r"\s+\d+\s*(am|pm|AM|PM).*$", "", due).strip()
+    clean = re.sub(r"T00:00:00\+00:00$", "", clean).strip()
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(clean, fmt)
+            return dt.strftime("%Y-%m-%dT00:00:00+00:00")
+        except:
+            continue
+    # Si no se pudo parsear, retornar None para evitar error en BD
+    return None
+
 def execute_actions(actions: list, user_id: str) -> list:
     """Ejecuta las acciones de herramientas y retorna confirmaciones."""
     created = []
@@ -167,12 +194,12 @@ def execute_actions(actions: list, user_id: str) -> list:
             created.append(f"📝 Nota creada: *{args['title']}*")
         elif action["name"] == "create_task":
             args = action["args"]
-            due = args.get("due_date")
+            due = parse_due_date(args.get("due_date"))
             supabase.table("tasks").insert({
                 "user_id": user_id,
                 "title": args["title"],
                 "priority": args.get("priority", "medium"),
-                "due_date": f"{due}T00:00:00+00:00" if due else None,
+                "due_date": due,
             }).execute()
             created.append(f"✅ Tarea creada: *{args['title']}*")
     return created
