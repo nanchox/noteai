@@ -2,29 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Scrollbar personalizado */
+/* ── Dark theme (default) ── */
+:root, [data-theme="dark"] {
+  --color-surface:       #0f0f0f;
+  --color-surface-card:  #1a1a1a;
+  --color-surface-hover: #242424;
+  --color-surface-border:#2a2a2a;
+  --color-text:          #ffffff;
+  --color-text-muted:    #9ca3af;
+  --color-text-subtle:   #6b7280;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --color-surface:       #f8f9fa;
+  --color-surface-card:  #ffffff;
+  --color-surface-hover: #f1f3f5;
+  --color-surface-border:#e5e7eb;
+  --color-text:          #111827;
+  --color-text-muted:    #374151;
+  --color-text-subtle:   #6b7280;
+}
+
+/* Aplicar variables CSS a las clases de Tailwind */
+body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: "Inter", system-ui, sans-serif;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Override Tailwind con variables CSS para tema dinámico */
+.bg-surface        { background-color: var(--color-surface) !important; }
+.bg-surface-card   { background-color: var(--color-surface-card) !important; }
+.bg-surface-hover  { background-color: var(--color-surface-hover) !important; }
+.border-surface-border { border-color: var(--color-surface-border) !important; }
+.text-white        { color: var(--color-text) !important; }
+.text-gray-400     { color: var(--color-text-muted) !important; }
+.text-gray-500     { color: var(--color-text-subtle) !important; }
+.text-gray-600     { color: var(--color-text-subtle) !important; }
+.placeholder-gray-500::placeholder { color: var(--color-text-subtle); }
+.placeholder-gray-600::placeholder { color: var(--color-text-subtle); }
+
+/* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--color-surface-border); border-radius: 2px; }
 
-/* Safe area para iOS (notch / home indicator) */
+/* Safe area iOS */
 body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Animaciones */
-@layer utilities {
-  .animate-fade-in { animation: fadeIn 0.2s ease-out; }
-  .animate-slide-up { animation: slideUp 0.3s ease-out; }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { transform: translateY(8px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+@keyframes fadeIn  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { transform: translateY(8px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+.animate-fade-in  { animation: fadeIn 0.2s ease-out; }
+.animate-slide-up { animation: slideUp 0.3s ease-out; }
