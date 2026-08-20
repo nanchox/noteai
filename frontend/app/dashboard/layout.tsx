@@ -9,7 +9,7 @@ import ReactMarkdown from "react-markdown";
 import {
   LayoutDashboard, FileText, CheckSquare, LogOut, Sparkles,
   Bell, FolderOpen, Search, AlarmClock, ChevronLeft, ChevronRight,
-  Send, X, Minimize2, Bot, User, Mic, MicOff, Sun, Moon, Wallet
+  Send, X, Minimize2, Bot, User, Mic, MicOff, Sun, Moon, Wallet, Menu
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -22,22 +22,20 @@ const NAV = [
   { href: "/dashboard/reminders", label: "Alertas",   icon: AlarmClock },
 ];
 
-// ── Búsqueda global en sidebar ───────────────────────────────
-function SidebarSearch() {
+// ── Búsqueda en sidebar ──────────────────────────────────────
+function SidebarSearch({ collapsed }: { collapsed: boolean }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<{ notes: any[]; tasks: any[]; projects: any[] } | null>(null);
+  const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const timer = useRef<NodeJS.Timeout>();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!query.trim()) { setResults(null); setOpen(false); return; }
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
-      setLoading(true);
-      setOpen(true);
+      setLoading(true); setOpen(true);
       try {
         const q = query.toLowerCase();
         const [notes, tasks, projects] = await Promise.all([
@@ -54,88 +52,63 @@ function SidebarSearch() {
     }, 400);
   }, [query]);
 
-  const go = (href: string) => {
-    router.push(href);
-    setQuery(""); setResults(null); setOpen(false);
-  };
-
+  const go = (href: string) => { router.push(href); setQuery(""); setResults(null); setOpen(false); };
   const total = results ? results.notes.length + results.tasks.length + results.projects.length : 0;
 
+  if (collapsed) return (
+    <button onClick={() => {}} className="flex justify-center py-2.5 w-full text-gray-500 hover:text-white hover:bg-surface-hover transition-colors" title="Buscar">
+      <Search className="w-4 h-4" />
+    </button>
+  );
+
   return (
-    <div className="relative px-3 mb-2">
+    <div className="relative px-3 mb-1">
       <div className="flex items-center gap-2 bg-surface border border-surface-border rounded-lg px-3 py-2 focus-within:border-primary/50 transition-colors">
         <Search className="w-3.5 h-3.5 shrink-0" style={{color:"var(--color-text-subtle)"}} />
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={e => setQuery(e.target.value)}
+        <input value={query} onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === "Escape" && (setQuery(""), setResults(null), setOpen(false))}
-          placeholder="Buscar..."
-          className="flex-1 bg-transparent text-xs focus:outline-none placeholder-gray-500 min-w-0"
-          style={{color:"var(--color-text)"}}
-        />
-        {query && (
-          <button onClick={() => { setQuery(""); setResults(null); setOpen(false); }}
-            className="shrink-0" style={{color:"var(--color-text-subtle)"}}>
-            <X className="w-3 h-3" />
-          </button>
-        )}
+          placeholder="Buscar..." className="flex-1 bg-transparent text-xs focus:outline-none placeholder-gray-500 min-w-0"
+          style={{color:"var(--color-text)"}} />
+        {query && <button onClick={() => { setQuery(""); setResults(null); setOpen(false); }} style={{color:"var(--color-text-subtle)"}}><X className="w-3 h-3" /></button>}
       </div>
-
-      {/* Panel de resultados */}
       {open && (
-        <div className="absolute left-3 right-3 top-full mt-1 bg-surface-card border border-surface-border rounded-xl shadow-2xl z-50 overflow-hidden animate-slide-up">
-          {loading && (
-            <div className="flex justify-center py-4">
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-          {!loading && total === 0 && query.trim() && (
-            <p className="text-xs text-center py-4" style={{color:"var(--color-text-subtle)"}}>Sin resultados para "{query}"</p>
-          )}
+        <div className="absolute left-3 right-3 top-full mt-1 border border-surface-border rounded-xl shadow-2xl z-50 overflow-hidden animate-slide-up" style={{backgroundColor:"var(--color-surface-card)"}}>
+          {loading && <div className="flex justify-center py-4"><div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}
+          {!loading && total === 0 && query.trim() && <p className="text-xs text-center py-4" style={{color:"var(--color-text-subtle)"}}>Sin resultados</p>}
           {!loading && results && total > 0 && (
-            <div className="max-h-72 overflow-y-auto">
-              {results.projects.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold px-3 pt-3 pb-1" style={{color:"var(--color-text-subtle)"}}>Proyectos</p>
-                  {results.projects.map(p => (
-                    <button key={p.id} onClick={() => go(`/dashboard/notes?project_id=${p.id}`)}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
-                      <span className="text-base">{p.icon}</span>
-                      <span className="text-xs font-medium truncate" style={{color:"var(--color-text)"}}>{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.notes.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold px-3 pt-2 pb-1" style={{color:"var(--color-text-subtle)"}}>Notas</p>
-                  {results.notes.map(n => (
-                    <button key={n.id} onClick={() => go(`/dashboard/notes?id=${n.id}`)}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
-                      <FileText className="w-3.5 h-3.5 text-primary-light shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium truncate" style={{color:"var(--color-text)"}}>{n.title || "Sin título"}</p>
-                        {n.content && <p className="text-xs truncate" style={{color:"var(--color-text-subtle)"}}>{n.content.replace(/[#*`_]/g,"").slice(0,50)}</p>}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.tasks.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold px-3 pt-2 pb-1" style={{color:"var(--color-text-subtle)"}}>Tareas</p>
-                  {results.tasks.map(t => (
-                    <button key={t.id} onClick={() => go("/dashboard/tasks")}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
-                      <div className={clsx("w-3.5 h-3.5 rounded-full border-2 shrink-0",
-                        t.is_completed ? "bg-success border-success" : "border-gray-500")} />
-                      <p className={clsx("text-xs truncate", t.is_completed ? "line-through" : "")}
-                        style={{color:"var(--color-text)"}}>{t.title}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="max-h-64 overflow-y-auto">
+              {results.projects.length > 0 && <>
+                <p className="text-xs font-semibold px-3 pt-3 pb-1" style={{color:"var(--color-text-subtle)"}}>Proyectos</p>
+                {results.projects.map((p: any) => (
+                  <button key={p.id} onClick={() => go(`/dashboard/notes?project_id=${p.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+                    <span>{p.icon}</span><span className="text-xs truncate" style={{color:"var(--color-text)"}}>{p.name}</span>
+                  </button>
+                ))}
+              </>}
+              {results.notes.length > 0 && <>
+                <p className="text-xs font-semibold px-3 pt-2 pb-1" style={{color:"var(--color-text-subtle)"}}>Notas</p>
+                {results.notes.map((n: any) => (
+                  <button key={n.id} onClick={() => go(`/dashboard/notes?id=${n.id}`)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+                    <FileText className="w-3.5 h-3.5 text-primary-light shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate" style={{color:"var(--color-text)"}}>{n.title || "Sin título"}</p>
+                      {n.content && <p className="text-xs truncate" style={{color:"var(--color-text-subtle)"}}>{n.content.replace(/[#*`_]/g,"").slice(0,40)}</p>}
+                    </div>
+                  </button>
+                ))}
+              </>}
+              {results.tasks.length > 0 && <>
+                <p className="text-xs font-semibold px-3 pt-2 pb-1" style={{color:"var(--color-text-subtle)"}}>Tareas</p>
+                {results.tasks.map((t: any) => (
+                  <button key={t.id} onClick={() => go("/dashboard/tasks")}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+                    <div className={clsx("w-3.5 h-3.5 rounded-full border-2 shrink-0", t.is_completed ? "bg-success border-success" : "border-gray-500")} />
+                    <p className="text-xs truncate" style={{color:"var(--color-text)"}}>{t.title}</p>
+                  </button>
+                ))}
+              </>}
             </div>
           )}
         </div>
@@ -162,34 +135,26 @@ function FloatingChat() {
     if (!SR) return;
     const rec = new SR();
     rec.lang = "es-CO"; rec.continuous = false; rec.interimResults = true;
-    rec.onresult = (e: any) => { const t = Array.from(e.results).map((r: any) => r[0].transcript).join(""); setInput(t); };
+    rec.onresult = (e: any) => setInput(Array.from(e.results).map((r: any) => r[0].transcript).join(""));
     rec.onend = () => setListening(false);
     rec.onerror = () => setListening(false);
     recognitionRef.current = rec;
   }, []);
 
   const toggleVoice = () => {
-    const rec = recognitionRef.current;
-    if (!rec) return;
-    if (listening) { rec.stop(); setListening(false); }
-    else { rec.start(); setListening(true); }
+    const rec = recognitionRef.current; if (!rec) return;
+    if (listening) { rec.stop(); setListening(false); } else { rec.start(); setListening(true); }
   };
 
   useEffect(() => {
-    if (open && !loaded) {
-      chatApi.history(10).then(h => { setMessages(h); setLoaded(true); }).catch(() => setLoaded(true));
-    }
+    if (open && !loaded) chatApi.history(10).then(h => { setMessages(h); setLoaded(true); }).catch(() => setLoaded(true));
   }, [open, loaded]);
 
-  useEffect(() => {
-    if (open) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-  }, [messages, open]);
-
+  useEffect(() => { if (open) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100); }, [messages, open]);
   useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 200); }, [open]);
 
   const send = async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || loading) return;
+    const msg = (text || input).trim(); if (!msg || loading) return;
     setInput("");
     if (listening) { recognitionRef.current?.stop(); setListening(false); }
     setMessages(prev => [...prev, { role: "user", content: msg, created_at: new Date().toISOString() }]);
@@ -206,10 +171,13 @@ function FloatingChat() {
 
   return (
     <>
+      {/* Panel del chat */}
       <div className={clsx(
-        "fixed bottom-20 right-4 z-50 flex flex-col border border-surface-border rounded-2xl shadow-2xl transition-all duration-300 origin-bottom-right bg-surface-card",
-        open ? "w-80 md:w-96 h-[520px] opacity-100 scale-100" : "w-0 h-0 opacity-0 scale-90 pointer-events-none"
-      )}>
+        "fixed z-50 flex flex-col border border-surface-border rounded-2xl shadow-2xl transition-all duration-300",
+        "bottom-20 right-3 md:bottom-20 md:right-4",
+        open ? "w-[calc(100vw-24px)] sm:w-80 md:w-96 h-[60vh] md:h-[520px] opacity-100 scale-100 origin-bottom-right"
+             : "w-0 h-0 opacity-0 scale-90 pointer-events-none origin-bottom-right"
+      )} style={{backgroundColor:"var(--color-surface-card)"}}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border rounded-t-2xl shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center">
@@ -228,11 +196,10 @@ function FloatingChat() {
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
           {!loaded && <div className="flex justify-center py-4"><div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}
           {loaded && messages.length === 0 && (
-            <div className="text-center py-6 space-y-2">
+            <div className="text-center py-4 space-y-2">
               <p className="text-xs" style={{color:"var(--color-text-subtle)"}}>Escríbeme o usa el micrófono</p>
               {["¿Qué tareas tengo hoy?", "Crea una nota rápida", "Muéstrame mis pendientes"].map(s => (
-                <button key={s} onClick={() => send(s)}
-                  className="w-full text-left text-xs bg-surface border border-surface-border px-3 py-2 rounded-lg hover:border-primary/30 transition-colors" style={{color:"var(--color-text-muted)"}}>
+                <button key={s} onClick={() => send(s)} className="w-full text-left text-xs bg-surface border border-surface-border px-3 py-2 rounded-lg hover:border-primary/30 transition-colors" style={{color:"var(--color-text-muted)"}}>
                   {s}
                 </button>
               ))}
@@ -298,9 +265,8 @@ function FloatingChat() {
               className="flex-1 bg-transparent text-xs focus:outline-none resize-none max-h-20 py-0.5 placeholder-gray-500"
               style={{minHeight:"24px", color:"var(--color-text)"}} />
             {recognitionRef.current && (
-              <button onClick={toggleVoice}
-                className={clsx("w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0",
-                  listening ? "bg-danger/20 text-danger animate-pulse" : "text-gray-500 hover:text-primary-light")}>
+              <button onClick={toggleVoice} className={clsx("w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                listening ? "bg-danger/20 text-danger animate-pulse" : "text-gray-500 hover:text-primary-light")}>
                 {listening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
               </button>
             )}
@@ -312,12 +278,14 @@ function FloatingChat() {
         </div>
       </div>
 
+      {/* Botón flotante */}
       <button onClick={() => setOpen(v => !v)}
         className={clsx(
-          "fixed bottom-4 right-4 z-50 w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center transition-all duration-300",
-          open ? "bg-surface-card border border-surface-border" : "bg-gradient-to-br from-primary to-accent text-white hover:scale-110"
+          "fixed z-50 w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-2xl flex items-center justify-center transition-all duration-300",
+          "bottom-4 right-3 md:bottom-4 md:right-4",
+          open ? "bg-surface-card border border-surface-border" : "bg-gradient-to-br from-primary to-accent text-white hover:scale-105"
         )}>
-        {open ? <X className="w-5 h-5" style={{color:"var(--color-text-subtle)"}} /> : <Bot className="w-6 h-6" />}
+        {open ? <X className="w-5 h-5" style={{color:"var(--color-text-subtle)"}} /> : <Bot className="w-5 h-5 md:w-6 md:h-6" />}
         {!open && <span className="absolute -top-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-surface animate-pulse" />}
       </button>
     </>
@@ -331,7 +299,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { theme, toggle } = useTheme();
   const [user, setUser] = useState<any>(null);
   const [reminders, setReminders] = useState<any[]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Móvil: colapsado por defecto. Desktop: expandido por defecto.
+  const [collapsed, setCollapsed] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    // En desktop expandir por defecto
+    if (window.innerWidth >= 768) setCollapsed(false);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -341,16 +316,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   const checkReminders = useCallback(async () => {
-    try {
-      const pending = await remindersApi.pending();
-      if (pending.length > 0) setReminders(pending);
-    } catch {}
+    try { const p = await remindersApi.pending(); if (p.length > 0) setReminders(p); } catch {}
   }, []);
 
   useEffect(() => {
     checkReminders();
-    const interval = setInterval(checkReminders, 60_000);
-    return () => clearInterval(interval);
+    const i = setInterval(checkReminders, 60_000);
+    return () => clearInterval(i);
   }, [checkReminders]);
 
   const dismissReminder = async (id: string) => {
@@ -358,93 +330,134 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setReminders(r => r.filter(x => x.id !== id));
   };
 
+  // Cerrar sidebar móvil al navegar
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  const isActive = (href: string) => href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+
+  // Sidebar unificado para móvil y desktop
+  const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <div className={clsx(
+      "flex flex-col h-full border-r border-surface-border transition-all duration-300",
+      isMobile ? "w-64" : (collapsed ? "w-16" : "w-60")
+    )} style={{backgroundColor:"var(--color-surface-card)"}}>
+
+      {/* Header */}
+      <div className={clsx("flex items-center border-b border-surface-border p-3 shrink-0",
+        (!isMobile && collapsed) ? "justify-center" : "justify-between")}>
+        {(isMobile || !collapsed) && (
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary-light shrink-0" />
+            <span className="font-bold" style={{color:"var(--color-text)"}}>HaIA</span>
+          </div>
+        )}
+        {!isMobile && collapsed && <Sparkles className="w-5 h-5 text-primary-light" />}
+        <button
+          onClick={() => isMobile ? setMobileOpen(false) : setCollapsed(v => !v)}
+          className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors" style={{color:"var(--color-text-subtle)"}}>
+          {isMobile ? <X className="w-4 h-4" /> : collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Búsqueda */}
+      <div className="pt-2 pb-1">
+        <SidebarSearch collapsed={!isMobile && collapsed} />
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-1 space-y-0.5 overflow-y-auto">
+        {NAV.map(({ href, label, icon: Icon }) => {
+          const active = isActive(href);
+          const isCol = !isMobile && collapsed;
+          return (
+            <Link key={href} href={href} title={isCol ? label : undefined}
+              className={clsx(
+                "flex items-center rounded-xl text-sm font-medium transition-colors",
+                isCol ? "justify-center p-3" : "gap-3 px-3 py-2.5",
+                active ? "bg-primary/20 text-primary-light" : "hover:bg-surface-hover"
+              )} style={!active ? {color:"var(--color-text-muted)"} : {}}>
+              <Icon className="w-4 h-4 shrink-0" />
+              {(isMobile || !collapsed) && label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="border-t border-surface-border p-2 shrink-0 space-y-0.5">
+        {/* Toggle tema */}
+        <button onClick={toggle} title={(!isMobile && collapsed) ? "Tema" : undefined}
+          className={clsx("flex items-center rounded-xl text-sm hover:bg-surface-hover w-full transition-colors",
+            (!isMobile && collapsed) ? "justify-center p-3" : "gap-3 px-3 py-2.5"
+          )} style={{color:"var(--color-text-muted)"}}>
+          {theme === "dark" ? <Sun className="w-4 h-4 shrink-0" /> : <Moon className="w-4 h-4 shrink-0" />}
+          {(isMobile || !collapsed) && (theme === "dark" ? "Modo claro" : "Modo oscuro")}
+        </button>
+
+        {/* Usuario */}
+        {(isMobile || !collapsed) && (
+          <div className="flex items-center gap-2 px-3 py-2">
+            {user?.user_metadata?.avatar_url && (
+              <img src={user.user_metadata.avatar_url} alt="" className="w-6 h-6 rounded-full shrink-0" />
+            )}
+            <span className="text-xs truncate" style={{color:"var(--color-text-subtle)"}}>
+              {user?.user_metadata?.full_name?.split(" ")[0] || user?.email}
+            </span>
+          </div>
+        )}
+
+        {/* Logout */}
+        <button onClick={async () => { await supabase.auth.signOut(); router.replace("/"); }}
+          title={(!isMobile && collapsed) ? "Salir" : undefined}
+          className={clsx("flex items-center rounded-xl text-sm hover:text-red-400 hover:bg-surface-hover w-full transition-colors",
+            (!isMobile && collapsed) ? "justify-center p-3" : "gap-3 px-3 py-2.5"
+          )} style={{color:"var(--color-text-subtle)"}}>
+          <LogOut className="w-4 h-4 shrink-0" />
+          {(isMobile || !collapsed) && "Salir"}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen overflow-hidden" style={{backgroundColor:"var(--color-surface)"}}>
 
-      {/* ── Sidebar desktop ── */}
-      <aside className={clsx(
-        "hidden md:flex flex-col border-r border-surface-border shrink-0 transition-all duration-300",
-        sidebarCollapsed ? "w-16" : "w-60"
-      )} style={{backgroundColor:"var(--color-surface-card)"}}>
+      {/* ── Sidebar desktop (oculto en móvil) ── */}
+      <div className="hidden md:flex shrink-0">
+        <SidebarContent />
+      </div>
 
-        {/* Logo + toggle */}
-        <div className={clsx("flex items-center border-b border-surface-border p-4 shrink-0",
-          sidebarCollapsed ? "justify-center" : "justify-between")}>
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary-light shrink-0" />
-              <span className="font-bold" style={{color:"var(--color-text)"}}>HaIA</span>
-            </div>
-          )}
-          {sidebarCollapsed && <Sparkles className="w-5 h-5 text-primary-light" />}
-          <button onClick={() => setSidebarCollapsed(v => !v)}
-            className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors" style={{color:"var(--color-text-subtle)"}}>
-            {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
-        </div>
-
-        {/* Búsqueda — solo cuando está expandido */}
-        {!sidebarCollapsed && (
-          <div className="pt-3 pb-1">
-            <SidebarSearch />
+      {/* ── Overlay sidebar móvil ── */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          {/* Panel */}
+          <div className="relative z-10 h-full animate-slide-up" style={{width:"264px"}}>
+            <SidebarContent isMobile />
           </div>
-        )}
-        {sidebarCollapsed && (
-          <button onClick={() => setSidebarCollapsed(false)}
-            className="flex justify-center py-3 px-2 text-gray-500 hover:text-white hover:bg-surface-hover transition-colors" title="Buscar">
-            <Search className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          {NAV.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
-            return (
-              <Link key={href} href={href} title={sidebarCollapsed ? label : undefined}
-                className={clsx("flex items-center rounded-lg text-sm font-medium transition-colors",
-                  sidebarCollapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5",
-                  active ? "bg-primary/20 text-primary-light" : "hover:bg-surface-hover"
-                )} style={!active ? {color:"var(--color-text-muted)"} : {}}>
-                <Icon className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Footer */}
-        <div className="border-t border-surface-border p-3 shrink-0 space-y-1">
-          <button onClick={toggle} title={sidebarCollapsed ? "Cambiar tema" : undefined}
-            className={clsx("flex items-center rounded-lg text-sm hover:bg-surface-hover w-full transition-colors",
-              sidebarCollapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2.5"
-            )} style={{color:"var(--color-text-muted)"}}>
-            {theme === "dark" ? <Sun className="w-4 h-4 shrink-0" /> : <Moon className="w-4 h-4 shrink-0" />}
-            {!sidebarCollapsed && (theme === "dark" ? "Modo claro" : "Modo oscuro")}
-          </button>
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2 px-3 py-1.5">
-              {user?.user_metadata?.avatar_url && (
-                <img src={user.user_metadata.avatar_url} alt="" className="w-6 h-6 rounded-full shrink-0" />
-              )}
-              <span className="text-xs truncate" style={{color:"var(--color-text-muted)"}}>
-                {user?.user_metadata?.full_name?.split(" ")[0] || user?.email}
-              </span>
-            </div>
-          )}
-          <button onClick={async () => { await supabase.auth.signOut(); router.replace("/"); }}
-            title={sidebarCollapsed ? "Salir" : undefined}
-            className={clsx("flex items-center rounded-lg text-sm hover:text-red-400 hover:bg-surface-hover w-full transition-colors",
-              sidebarCollapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2"
-            )} style={{color:"var(--color-text-subtle)"}}>
-            <LogOut className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && "Salir"}
-          </button>
         </div>
-      </aside>
+      )}
 
       {/* ── Main ── */}
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+
+        {/* Header móvil con hamburguesa */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-surface-border shrink-0" style={{backgroundColor:"var(--color-surface-card)"}}>
+          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-xl hover:bg-surface-hover transition-colors -ml-1" style={{color:"var(--color-text-muted)"}}>
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-primary-light" />
+            <span className="font-bold text-sm" style={{color:"var(--color-text)"}}>HaIA</span>
+          </div>
+          <div className="flex-1" />
+          {user?.user_metadata?.avatar_url && (
+            <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+          )}
+        </div>
+
+        {/* Banners de recordatorios */}
         {reminders.map(r => (
           <div key={r.id} className="flex items-center justify-between bg-warning/10 border-b border-warning/30 px-4 py-2.5 text-sm text-warning animate-slide-up shrink-0">
             <span className="flex items-center gap-2"><Bell className="w-4 h-4 shrink-0" />{r.message}</span>
@@ -452,20 +465,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         ))}
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
-
-        {/* Bottom nav mobile */}
-        <nav className="md:hidden flex border-t border-surface-border shrink-0 overflow-x-auto" style={{backgroundColor:"var(--color-surface-card)"}}>
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}
-              className={clsx("flex-1 flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors min-w-[48px]",
-                pathname === href || (href !== "/dashboard" && pathname.startsWith(href)) ? "text-primary-light" : ""
-              )} style={!(pathname === href || (href !== "/dashboard" && pathname.startsWith(href))) ? {color:"var(--color-text-subtle)"} : {}}>
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px]">{label}</span>
-            </Link>
-          ))}
-        </nav>
+        <main className="flex-1 overflow-y-auto overscroll-contain">
+          {children}
+        </main>
       </div>
 
       <FloatingChat />
