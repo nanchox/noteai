@@ -92,3 +92,37 @@ export const remindersApi = {
   weeklySummary: () => request<any>("/api/reminders/weekly-summary"),
   sendDailyDigest: () => request<any>("/api/reminders/send-daily-digest", { method: "POST" }),
 };
+
+// ── Finanzas ───────────────────────────────────────────────
+export const finanzasApi = {
+  setup: () => request<any>("/api/finanzas/setup", { method: "POST" }),
+  joinFamily: (id: string) => request<any>(`/api/finanzas/join-family/${id}`, { method: "POST" }),
+  categories: () => request<any[]>("/api/finanzas/categories"),
+  dashboard: (month?: number, year?: number) => request<any>(`/api/finanzas/dashboard${buildParams({ month, year })}`),
+  advice: (month?: number, year?: number) => request<any>(`/api/finanzas/advice${buildParams({ month, year })}`),
+  expenses: {
+    list: (p?: { month?: number; year?: number; category_id?: string }) => request<any[]>(`/api/finanzas/expenses${buildParams(p)}`),
+    create: (d: any) => request<any>("/api/finanzas/expenses", { method: "POST", body: JSON.stringify(d) }),
+    fromChat: (message: string) => request<any>("/api/finanzas/expenses/from-chat", { method: "POST", body: JSON.stringify({ message }) }),
+    delete: (id: string) => request<any>(`/api/finanzas/expenses/${id}`, { method: "DELETE" }),
+  },
+  incomes: {
+    list: (p?: { month?: number; year?: number }) => request<any[]>(`/api/finanzas/incomes${buildParams(p)}`),
+    create: (d: any) => request<any>("/api/finanzas/incomes", { method: "POST", body: JSON.stringify(d) }),
+  },
+  fixedExpenses: {
+    list: () => request<any[]>("/api/finanzas/fixed-expenses"),
+    create: (d: any) => request<any>("/api/finanzas/fixed-expenses", { method: "POST", body: JSON.stringify(d) }),
+    delete: (id: string) => request<any>(`/api/finanzas/fixed-expenses/${id}`, { method: "DELETE" }),
+  },
+  budgets: {
+    list: (p?: { month?: number; year?: number }) => request<any[]>(`/api/finanzas/budgets${buildParams(p)}`),
+    upsert: (d: any) => request<any>("/api/finanzas/budgets", { method: "POST", body: JSON.stringify(d) }),
+  },
+  savings: {
+    list: () => request<any[]>("/api/finanzas/savings"),
+    create: (d: any) => request<any>("/api/finanzas/savings", { method: "POST", body: JSON.stringify(d) }),
+    addMovement: (id: string, d: any) => request<any>(`/api/finanzas/savings/${id}/movements`, { method: "POST", body: JSON.stringify(d) }),
+    movements: (id: string) => request<any[]>(`/api/finanzas/savings/${id}/movements`),
+  },
+};

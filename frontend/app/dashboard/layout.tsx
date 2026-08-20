@@ -10,7 +10,7 @@ import {
   LayoutDashboard, FileText, CheckSquare, LogOut, Sparkles,
   Bell, FolderOpen, Kanban, Search, AlarmClock, ChevronLeft,
   ChevronRight, Send, X, Minimize2, Bot, User, Mic, MicOff,
-  Sun, Moon, PenLine
+  Sun, Moon, PenLine, Wallet
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -22,6 +22,7 @@ const NAV = [
   { href: "/dashboard/kanban",    label: "Kanban",    icon: Kanban },
   { href: "/dashboard/draw",      label: "Dibujo",    icon: PenLine },
   { href: "/dashboard/search",    label: "Buscar",    icon: Search },
+  { href: "/dashboard/finanzas",  label: "Finanzas",  icon: Wallet },
   { href: "/dashboard/reminders", label: "Alertas",   icon: AlarmClock },
 ];
 

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 
-from routers import notes, projects, tasks, chat, auth, reminders, telegram
+from routers import notes, projects, tasks, chat, auth, reminders, telegram, finanzas
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +39,7 @@ app.include_router(tasks.router,     prefix="/api/tasks",     tags=["Tasks"])
 app.include_router(chat.router,      prefix="/api/chat",      tags=["Chat IA"])
 app.include_router(reminders.router, prefix="/api/reminders", tags=["Reminders"])
 app.include_router(telegram.router,  prefix="/api/telegram",  tags=["Telegram"])
+app.include_router(finanzas.router,  prefix="/api/finanzas",  tags=["Finanzas"])
 
 @app.get("/")
 def health():
