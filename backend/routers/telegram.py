@@ -93,6 +93,25 @@ async def call_ai_with_history(messages: list) -> dict:
                     "required": ["title", "priority"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "register_expense",
+                "description": "Registra un gasto familiar. Úsalo cuando el usuario mencione que gastó, compró o pagó algo.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {"type": "number", "description": "Monto en pesos colombianos"},
+                        "description": {"type": "string", "description": "Descripción del gasto"},
+                        "place": {"type": "string", "description": "Lugar o tienda (opcional)"},
+                        "category_name": {"type": "string", "description": "Categoría: Mercado, Restaurantes, Transporte, Salud, Educación, Entretenimiento, Servicios, Ropa, Vivienda, Mascotas, Otros"},
+                        "payment_method": {"type": "string", "enum": ["efectivo", "debito", "credito", "transferencia", "otro"]},
+                        "expense_date": {"type": "string", "description": "Fecha YYYY-MM-DD, hoy si no se menciona"}
+                    },
+                    "required": ["amount", "description", "payment_method"]
+                }
+            }
         }
     ]
 
@@ -180,6 +199,20 @@ def parse_due_date(due: str) -> str | None:
     # Si no se pudo parsear, retornar None para evitar error en BD
     return None
 
+def get_family_id_tg(user_id: str):
+    result = supabase.table("profiles").select("family_id").eq("id", user_id).single().execute()
+    return result.data.get("family_id") if result.data else None
+
+def get_category_id_tg(family_id: str, category_name: str):
+    if not family_id or not category_name:
+        return None
+    cats = supabase.table("expense_categories").select("id, name").eq("family_id", family_id).execute().data
+    name_lower = category_name.lower()
+    for cat in cats:
+        if cat["name"].lower() == name_lower or name_lower in cat["name"].lower():
+            return cat["id"]
+    return cats[0]["id"] if cats else None
+
 def execute_actions(actions: list, user_id: str) -> list:
     """Ejecuta las acciones de herramientas y retorna confirmaciones."""
     created = []
@@ -202,6 +235,28 @@ def execute_actions(actions: list, user_id: str) -> list:
                 "due_date": due,
             }).execute()
             created.append(f"✅ Tarea creada: *{args['title']}*")
+        elif action["name"] == "register_expense":
+            from datetime import date as date_cls
+            args = action["args"]
+            family_id = get_family_id_tg(user_id)
+            if not family_id:
+                created.append("⚠️ No tienes finanzas configuradas en HaIA.")
+                continue
+            cat_id = get_category_id_tg(family_id, args.get("category_name", ""))
+            raw_date = args.get("expense_date", date_cls.today().isoformat())
+            expense_date = raw_date[:10] if raw_date else date_cls.today().isoformat()
+            amount = float(args["amount"])
+            supabase.table("expenses").insert({
+                "family_id": family_id,
+                "user_id": user_id,
+                "amount": amount,
+                "description": args["description"],
+                "place": args.get("place"),
+                "category_id": cat_id,
+                "payment_method": args.get("payment_method", "efectivo"),
+                "expense_date": expense_date,
+            }).execute()
+            created.append(f"💸 Gasto registrado: *${amount:,.0f}* en _{args['description']}_")
     return created
 
 @router.post("/webhook")

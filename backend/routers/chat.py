@@ -46,6 +46,25 @@ TOOLS = [
                 "required": ["title", "priority"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "register_expense",
+            "description": "Registra un gasto familiar en HaIA Finanzas. Úsalo cuando el usuario mencione que gastó dinero, compró algo, o pagó algo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "number", "description": "Monto en pesos colombianos (número sin puntos ni comas)"},
+                    "description": {"type": "string", "description": "Descripción breve del gasto"},
+                    "place": {"type": "string", "description": "Lugar o tienda donde se realizó el gasto (opcional)"},
+                    "category_name": {"type": "string", "description": "Categoría del gasto: Mercado, Restaurantes, Transporte, Salud, Educación, Entretenimiento, Servicios, Ropa, Vivienda, Mascotas, Otros"},
+                    "payment_method": {"type": "string", "enum": ["efectivo", "debito", "credito", "transferencia", "otro"], "description": "Método de pago"},
+                    "expense_date": {"type": "string", "description": "Fecha en formato YYYY-MM-DD. Si no se menciona, usar hoy."}
+                },
+                "required": ["amount", "description", "payment_method"]
+            }
+        }
     }
 ]
 
@@ -85,6 +104,20 @@ def get_user_context(user_id: str, project_id: Optional[str], query: str) -> str
             parts.append(f"  - [{t['priority'].upper()}] {t['title']}{due} {pname}")
     return "\n".join(parts) if parts else "Sin notas ni tareas aún."
 
+def get_family_id_for_user(user_id: str):
+    result = supabase.table("profiles").select("family_id").eq("id", user_id).single().execute()
+    return result.data.get("family_id") if result.data else None
+
+def get_category_id(family_id: str, category_name: str):
+    if not family_id or not category_name:
+        return None
+    cats = supabase.table("expense_categories").select("id, name").eq("family_id", family_id).execute().data
+    name_lower = category_name.lower()
+    for cat in cats:
+        if cat["name"].lower() == name_lower or name_lower in cat["name"].lower():
+            return cat["id"]
+    return cats[0]["id"] if cats else None
+
 def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Optional[str]) -> dict:
     if tool_name == "create_note":
         pid = tool_input.get("project_id") or project_id or None
@@ -107,6 +140,32 @@ def execute_tool(tool_name: str, tool_input: dict, user_id: str, project_id: Opt
             "project_id": pid,
         }).execute()
         return {"created": "task", "id": result.data[0]["id"], "title": tool_input["title"]}
+    elif tool_name == "register_expense":
+        from datetime import date as date_cls
+        family_id = get_family_id_for_user(user_id)
+        if not family_id:
+            return {"error": "No tienes finanzas configuradas. Ve a HaIA → Finanzas primero."}
+        cat_id = get_category_id(family_id, tool_input.get("category_name", ""))
+        raw_date = tool_input.get("expense_date", date_cls.today().isoformat())
+        expense_date = raw_date[:10] if raw_date else date_cls.today().isoformat()
+        amount = float(tool_input["amount"])
+        result = supabase.table("expenses").insert({
+            "family_id": family_id,
+            "user_id": user_id,
+            "amount": amount,
+            "description": tool_input["description"],
+            "place": tool_input.get("place"),
+            "category_id": cat_id,
+            "payment_method": tool_input.get("payment_method", "efectivo"),
+            "expense_date": expense_date,
+        }).execute()
+        return {
+            "created": "expense",
+            "id": result.data[0]["id"],
+            "amount": amount,
+            "description": tool_input["description"],
+            "title": f"${amount:,.0f} en {tool_input['description']}",
+        }
     return {"error": "Herramienta desconocida"}
 
 async def call_openrouter(messages: list, use_tools: bool = True) -> dict:
@@ -153,11 +212,14 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
 Tienes acceso al contexto actual del usuario:
 {user_context}
 
-Puedes crear notas y tareas directamente cuando el usuario te lo pida:
-- "crea una nota sobre...", "anota que...", "escribe una nota..."
-- "crea una tarea para...", "agrega un pendiente de...", "recuérdame..."
+Puedes crear notas, tareas y registrar gastos con las herramientas disponibles:
+- Notas: "crea una nota sobre...", "anota que...", "escribe una nota..."
+- Tareas: "crea una tarea para...", "agrega un pendiente de...", "recuérdame..."
+- Gastos: "gasté 50.000 en el Éxito", "pagué 120mil de mercado con débito", "almuerzo 35000 efectivo"
 
-Cuando crees algo, confirma amigablemente qué creaste. Sé conciso y útil."""
+Cuando alguien mencione gastos, compras o pagos, usa register_expense automáticamente.
+Al registrar un gasto confirma: monto en COP y descripción (ej: "✅ $50.000 en Mercado Éxito registrado").
+Sé conciso y útil."""
 
     messages = [{"role": "system", "content": system_prompt}]
     for m in reversed(history):

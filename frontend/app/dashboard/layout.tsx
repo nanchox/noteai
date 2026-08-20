@@ -223,8 +223,12 @@ function FloatingChat() {
                 {msg.actions?.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {msg.actions.map((a: any, j: number) => (
-                      <span key={j} className="text-xs bg-success/10 border border-success/20 text-success px-2 py-0.5 rounded-full">
-                        {a.created === "note" ? "📝" : "✅"} {a.title}
+                      <span key={j} className={`text-xs border px-2 py-0.5 rounded-full ${
+                        a.created === "expense"
+                          ? "bg-warning/10 border-warning/20 text-warning"
+                          : "bg-success/10 border-success/20 text-success"
+                      }`}>
+                        {a.created === "note" ? "📝" : a.created === "expense" ? "💸" : "✅"} {a.title}
                       </span>
                     ))}
                   </div>
