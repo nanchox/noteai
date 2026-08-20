@@ -190,13 +190,32 @@ Hoy es {date.today().isoformat()}. En Colombia 85.000 = 85000."""
         if resp.status_code != 200:
             raise HTTPException(status_code=500, detail="Error al procesar el gasto con IA")
 
-    content = resp.json()["choices"][0]["message"]["content"]
-    # Limpiar posibles backticks
-    content = content.strip().strip("```json").strip("```").strip()
+    resp_data = resp.json()
+    # El modelo puede usar tool_calls en vez de content directo
+    msg = resp_data["choices"][0]["message"]
+    raw = msg.get("content")
+
+    # Si el modelo no retornó content (usó tool_calls u otro), forzar segunda llamada sin tools
+    if not raw:
+        body_retry = {**body}
+        body_retry.pop("tools", None)
+        async with httpx.AsyncClient(timeout=20.0) as client2:
+            resp2 = await client2.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body_retry)
+            if resp2.status_code == 200:
+                raw = resp2.json()["choices"][0]["message"].get("content")
+
+    if not raw:
+        raise HTTPException(status_code=422, detail=f"El modelo no pudo interpretar: {req.message}")
+
+    # Limpiar posibles backticks y espacios
+    import re
+    content_clean = raw.strip()
+    content_clean = re.sub(r"^```(?:json)?", "", content_clean).strip()
+    content_clean = re.sub(r"```$", "", content_clean).strip()
 
     try:
-        parsed = json.loads(content)
-    except:
+        parsed = json.loads(content_clean)
+    except Exception:
         raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
 
     # Guardar en BD
