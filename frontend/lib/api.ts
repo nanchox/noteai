@@ -97,7 +97,10 @@ export const remindersApi = {
 export const finanzasApi = {
   setup: () => request<any>("/api/finanzas/setup", { method: "POST" }),
   joinFamily: (id: string) => request<any>(`/api/finanzas/join-family/${id}`, { method: "POST" }),
+  familyId: () => request<any>("/api/finanzas/family-id"),
   categories: () => request<any[]>("/api/finanzas/categories"),
+  createCategory: (d: any) => request<any>("/api/finanzas/categories", { method: "POST", body: JSON.stringify(d) }),
+  checkBudgetAlerts: () => request<any>("/api/finanzas/check-budget-alerts", { method: "POST" }),
   dashboard: (month?: number, year?: number) => request<any>(`/api/finanzas/dashboard${buildParams({ month, year })}`),
   advice: (month?: number, year?: number) => request<any>(`/api/finanzas/advice${buildParams({ month, year })}`),
   expenses: {

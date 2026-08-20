@@ -233,16 +233,18 @@ export default function FinanzasPage() {
       </div>
 
       {/* Accesos rápidos */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
         {[
-          { label: "Registrar gasto", href: "/dashboard/finanzas/gastos", emoji: "💸" },
-          { label: "Ingresos", href: "/dashboard/finanzas/ingresos", emoji: "💵" },
+          { label: "Gastos",       href: "/dashboard/finanzas/gastos",       emoji: "💸" },
+          { label: "Ingresos",     href: "/dashboard/finanzas/ingresos",     emoji: "💵" },
+          { label: "Fijos",        href: "/dashboard/finanzas/gastos-fijos", emoji: "🔄" },
           { label: "Presupuestos", href: "/dashboard/finanzas/presupuestos", emoji: "📊" },
-          { label: "Ahorros", href: "/dashboard/finanzas/ahorros", emoji: "🏦" },
+          { label: "Ahorros",      href: "/dashboard/finanzas/ahorros",      emoji: "🏦" },
+          { label: "Historial",    href: "/dashboard/finanzas/historial",    emoji: "📋" },
         ].map(({ label, href, emoji }) => (
           <Link key={label} href={href}
-            className="bg-surface-card border border-surface-border rounded-xl p-4 flex flex-col items-center gap-2 hover:border-primary/30 transition-colors text-center">
-            <span className="text-2xl">{emoji}</span>
+            className="bg-surface-card border border-surface-border rounded-xl p-3 flex flex-col items-center gap-1.5 hover:border-primary/30 transition-colors text-center">
+            <span className="text-xl">{emoji}</span>
             <span className="text-xs font-medium" style={{color:"var(--color-text-muted)"}}>{label}</span>
           </Link>
         ))}

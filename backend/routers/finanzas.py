@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
+from typing import Optional, List
 from decimal import Decimal
 from core.supabase import supabase, get_current_user
 from core.config import settings
@@ -62,11 +63,32 @@ async def join_family(family_id: str, user=Depends(get_current_user)):
     return {"message": "Vinculado a la familia", "family_id": family_id}
 
 # ── Categorías ───────────────────────────────────────────────
+class CategoryCreate(BaseModel):
+    name: str
+    icon: str = "💰"
+    color: str = "#6366f1"
+
 @router.get("/categories")
 async def list_categories(user=Depends(get_current_user)):
     fid = require_family(user)
     result = supabase.table("expense_categories").select("*").eq("family_id", fid).order("name").execute()
     return result.data
+
+@router.post("/categories")
+async def create_category(cat: CategoryCreate, user=Depends(get_current_user)):
+    fid = require_family(user)
+    result = supabase.table("expense_categories").insert({
+        "family_id": fid, "name": cat.name, "icon": cat.icon, "color": cat.color, "is_default": False
+    }).execute()
+    return result.data[0]
+
+@router.get("/family-id")
+async def get_family_id_endpoint(user=Depends(get_current_user)):
+    """Retorna el family_id para compartir con otros miembros."""
+    fid = get_family_id(user["id"])
+    if not fid:
+        raise HTTPException(status_code=404, detail="Sin familia configurada")
+    return {"family_id": fid}
 
 # ── Gastos ───────────────────────────────────────────────────
 class ExpenseCreate(BaseModel):
@@ -436,3 +458,42 @@ Incluye: evaluación del mes, alertas si gastan más de lo que ganan, 3 consejos
         advice = resp.json()["choices"][0]["message"]["content"] if resp.status_code == 200 else "No se pudo generar el análisis."
 
     return {"advice": advice, "dashboard": dashboard}
+
+# ── Alertas Telegram para presupuestos ───────────────────────
+@router.post("/check-budget-alerts")
+async def check_budget_alerts(
+    background_tasks: BackgroundTasks,
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    user=Depends(get_current_user)
+):
+    """Envía alertas a Telegram cuando un presupuesto supera el 80%."""
+    from routers.reminders import send_telegram, get_telegram_chat_id
+    from fastapi import BackgroundTasks
+
+    fid = require_family(user)
+    now = datetime.now()
+    m, y = month or now.month, year or now.year
+
+    # Obtener dashboard
+    dash = await financial_dashboard(m, y, user)
+    alerts = [b for b in dash["budget_status"] if b["percent"] >= 80]
+
+    if not alerts:
+        return {"message": "Sin alertas", "alerts": []}
+
+    telegram_id = supabase.table("profiles").select("telegram_id").eq("id", user["id"]).single().execute().data.get("telegram_id")
+    if not telegram_id:
+        return {"message": "Sin Telegram vinculado", "alerts": alerts}
+
+    lines = ["⚠️ *Alertas de presupuesto HaIA*\n"]
+    for a in alerts:
+        emoji = "🔴" if a["percent"] >= 100 else "🟡"
+        lines.append(f"{emoji} *{a['category']}*: {a['percent']}% usado")
+        lines.append(f"   Gastado: {COP_fmt(a['spent'])} / Límite: {COP_fmt(a['limit'])}")
+
+    background_tasks.add_task(send_telegram, telegram_id, "\n".join(lines))
+    return {"message": f"{len(alerts)} alertas enviadas", "alerts": alerts}
+
+def COP_fmt(n: float) -> str:
+    return f"${n:,.0f}".replace(",", ".")
