@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { notesApi, tasksApi, projectsApi } from "@/lib/api";
+import { notesApi, tasksApi, projectsApi, remindersApi } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { FileText, CheckSquare, FolderOpen, ArrowRight, Clock, TrendingUp, Calendar } from "lucide-react";
 import { format, subDays, isToday, isYesterday } from "date-fns";
@@ -27,6 +27,14 @@ export default function DashboardPage() {
       setUser(data.user);
       setReady(true);
     });
+    // Enviar digest diario a Telegram (una vez por día)
+    const lastDigest = localStorage.getItem("haia-last-digest");
+    const today = new Date().toDateString();
+    if (lastDigest !== today) {
+      remindersApi.sendDailyDigest().then(() => {
+        localStorage.setItem("haia-last-digest", today);
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {

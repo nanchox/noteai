@@ -90,4 +90,5 @@ export const remindersApi = {
   dismiss: (id: string) => request<any>(`/api/reminders/${id}/dismiss`, { method: "PATCH" }),
   delete: (id: string) => request<any>(`/api/reminders/${id}`, { method: "DELETE" }),
   weeklySummary: () => request<any>("/api/reminders/weekly-summary"),
+  sendDailyDigest: () => request<any>("/api/reminders/send-daily-digest", { method: "POST" }),
 };
