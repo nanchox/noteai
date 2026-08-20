@@ -149,31 +149,37 @@ export default function DrawPage() {
     if (!canvas || saving || !ready) return;
     setSaving(true);
     try {
-      // Crear nota
+      // 1. Crear nota vacía para obtener ID
       const note = await notesApi.create({
         title,
-        content: `*Nota dibujada a mano alzada*\n\n_Creada desde HaIA Draw_`,
+        content: "_Guardando dibujo..._",
         project_id: selectedProject || null,
         tags: ["dibujo"],
       });
 
-      // Convertir canvas a blob y subir como imagen
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const file = new File([blob], `${title}.png`, { type: "image/png" });
-        await notesApi.uploadImage(note.id, file);
+      // 2. Canvas a blob usando Promise
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("Canvas vacío"))),
+          "image/png",
+          0.92
+        );
+      });
 
-        // Actualizar contenido con la imagen
-        await notesApi.update(note.id, {
-          content: `*Nota dibujada a mano alzada*\n\n![${title}](adjunto)`,
-        });
+      // 3. Subir imagen y obtener URL pública real
+      const file = new File([blob], `${title}.png`, { type: "image/png" });
+      const imgRecord = await notesApi.uploadImage(note.id, file);
+      const publicUrl = imgRecord.public_url;
 
-        setSaved(true);
-        setTimeout(() => router.push(`/dashboard/notes?id=${note.id}`), 1200);
-      }, "image/png");
+      // 4. Actualizar nota con URL real de la imagen en Markdown
+      await notesApi.update(note.id, {
+        content: `# ${title}\n\n![${title}](${publicUrl})\n\n_Nota dibujada a mano alzada en HaIA_`,
+      });
+
+      setSaved(true);
+      setTimeout(() => router.push(`/dashboard/notes?id=${note.id}`), 1200);
     } catch (e) {
-      console.error(e);
-    } finally {
+      console.error("Error guardando nota dibujada:", e);
       setSaving(false);
     }
   };
