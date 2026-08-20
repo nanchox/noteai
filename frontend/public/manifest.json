@@ -1,7 +1,7 @@
 {
-  "name": "NoteAI",
-  "short_name": "NoteAI",
-  "description": "Tu asistente personal de notas con IA",
+  "name": "HaIA",
+  "short_name": "HaIA",
+  "description": "Hernán & Angie + IA",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f0f",

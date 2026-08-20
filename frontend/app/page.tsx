@@ -39,9 +39,9 @@ export default function LoginPage() {
           <div className="w-16 h-16 bg-primary/20 rounded-2xl flex items-center justify-center mb-4 border border-primary/30">
             <Sparkles className="w-8 h-8 text-primary-light" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">NoteAI</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">HaIA</h1>
           <p className="text-sm text-gray-400 mt-2 text-center">
-            Tu asistente personal de notas e ideas
+            Hernán & Angie + IA
           </p>
         </div>
 

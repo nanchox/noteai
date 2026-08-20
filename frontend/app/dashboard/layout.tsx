@@ -284,7 +284,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary-light shrink-0" />
-              <span className="font-bold text-white">NoteAI</span>
+              <span className="font-bold text-white">HaIA</span>
             </div>
           )}
           {sidebarCollapsed && <Sparkles className="w-5 h-5 text-primary-light" />}
