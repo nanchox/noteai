@@ -163,24 +163,21 @@ async def expense_from_chat(req: ExpenseFromChat, user=Depends(get_current_user)
         "model": settings.AI_MODEL,
         "messages": [{
             "role": "user",
-            "content": f"""Extrae los datos de este gasto en español colombiano y responde SOLO con JSON válido, sin texto adicional:
+            "content": f"""Extrae los datos del siguiente gasto y responde ÚNICAMENTE con un objeto JSON, sin explicaciones ni markdown.
 
-Mensaje: "{req.message}"
-
+Gasto: "{req.message}"
+Hoy: {date.today().isoformat()}
 Categorías disponibles: {cats_str}
 
-Responde exactamente con este JSON:
-{{
-  "amount": <número sin puntos ni comas>,
-  "description": "<descripción breve>",
-  "place": "<lugar o tienda, null si no se menciona>",
-  "category_id": "<id de la categoría más apropiada>",
-  "payment_method": "<efectivo|debito|credito|transferencia|otro>",
-  "expense_date": "<YYYY-MM-DD, hoy si no se menciona>",
-  "confidence": <0.0-1.0>
-}}
+Reglas:
+- amount: solo el número (19000, no "19.000" ni "$19.000")
+- payment_method: efectivo, debito, credito, transferencia u otro
+- expense_date: formato YYYY-MM-DD, usar hoy si no se menciona
+- category_id: el id de la categoría más apropiada de la lista
+- place: null si no se menciona
 
-Hoy es {date.today().isoformat()}. En Colombia 85.000 = 85000."""
+Responde solo con este JSON (sin texto antes ni después):
+{{"amount": 0, "description": "", "place": null, "category_id": "", "payment_method": "efectivo", "expense_date": "{date.today().isoformat()}", "confidence": 1.0}}"""
         }],
         "max_tokens": 300,
     }
@@ -207,16 +204,29 @@ Hoy es {date.today().isoformat()}. En Colombia 85.000 = 85000."""
     if not raw:
         raise HTTPException(status_code=422, detail=f"El modelo no pudo interpretar: {req.message}")
 
-    # Limpiar posibles backticks y espacios
+    # Limpiar y extraer JSON del texto
     import re
     content_clean = raw.strip()
-    content_clean = re.sub(r"^```(?:json)?", "", content_clean).strip()
-    content_clean = re.sub(r"```$", "", content_clean).strip()
 
+    # Quitar bloques de código markdown
+    content_clean = re.sub(r"^```(?:json)?\s*", "", content_clean)
+    content_clean = re.sub(r"\s*```$", "", content_clean).strip()
+
+    # Si todavía no parsea, buscar el primer objeto JSON en el texto
     try:
         parsed = json.loads(content_clean)
     except Exception:
-        raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
+        # Buscar cualquier {...} en la respuesta
+        match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+            except Exception:
+                print(f"[expense_from_chat] No se pudo parsear. Raw: {repr(raw)}")
+                raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
+        else:
+            print(f"[expense_from_chat] Sin JSON en respuesta. Raw: {repr(raw)}")
+            raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
 
     # Guardar en BD
     result = supabase.table("expenses").insert({
