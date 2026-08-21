@@ -38,7 +38,7 @@ export const notesApi = {
   list: (params?: { project_id?: string; search?: string; archived?: boolean }) =>
     request<any[]>(`/api/notes/${buildParams(params)}`),
   get: (id: string) => request<any>(`/api/notes/${id}`),
-  create: (data: any) => request<any>("/api/notes/", { method: "POST", body: JSON.stringify(data) }),
+  create: (data: any) => request<any>("/api/notes/", { method: "POST", body: JSON.stringify({ blocks: [], ...data }) }),
   update: (id: string, data: any) => request<any>(`/api/notes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/api/notes/${id}`, { method: "DELETE" }),
   uploadImage: async (noteId: string, file: File) => {
