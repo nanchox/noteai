@@ -6,9 +6,66 @@ from typing import Optional, List
 from decimal import Decimal
 from core.supabase import supabase, get_current_user
 from core.config import settings
-import httpx, json
+import httpx, json, re
 
 router = APIRouter()
+
+# ── Heurísticas locales (respaldo cuando la IA falla) ────────
+PAYMENT_KEYWORDS = [
+    ("transferencia", ["pse", "transferencia", "nequi", "daviplata", "bancolombia a la mano"]),
+    ("credito",       ["credito", "crédito", "tarjeta de credito", "tarjeta de crédito"]),
+    ("debito",        ["debito", "débito", "tarjeta debito", "tarjeta débito"]),
+    ("efectivo",      ["efectivo", "cash", "billetes"]),
+]
+
+CATEGORY_KEYWORDS = {
+    "arriendo": "Vivienda", "renta": "Vivienda", "administracion": "Vivienda", "administración": "Vivienda",
+    "mercado": "Mercado", "super": "Mercado", "supermercado": "Mercado",
+    "restaurante": "Restaurantes", "almuerzo": "Restaurantes", "comida": "Restaurantes",
+    "gasolina": "Transporte", "uber": "Transporte", "taxi": "Transporte", "bus": "Transporte", "parqueadero": "Transporte",
+    "medicina": "Salud", "droguería": "Salud", "drogueria": "Salud", "farmacia": "Salud", "medico": "Salud", "médico": "Salud",
+    "colegio": "Educación", "universidad": "Educación", "matricula": "Educación", "matrícula": "Educación",
+    "netflix": "Entretenimiento", "cine": "Entretenimiento", "spotify": "Entretenimiento",
+    "luz": "Servicios", "agua": "Servicios", "internet": "Servicios", "celular": "Servicios",
+    "ropa": "Ropa", "zapatos": "Ropa",
+    "mascota": "Mascotas", "veterinario": "Mascotas", "perro": "Mascotas", "gato": "Mascotas",
+}
+
+def guess_payment_method(text: str) -> str:
+    low = text.lower()
+    for method, keywords in PAYMENT_KEYWORDS:
+        if any(k in low for k in keywords):
+            return method
+    return "efectivo"
+
+def guess_category_id(text: str, categories: list) -> Optional[str]:
+    low = text.lower()
+    by_name = {c["name"].lower(): c["id"] for c in categories}
+    for word, cat_name in CATEGORY_KEYWORDS.items():
+        if word in low and cat_name.lower() in by_name:
+            return by_name[cat_name.lower()]
+    return None
+
+# Monto colombiano: admite apóstrofe/punto como separador de miles (ej. "2'982.691", "85.000", "85000")
+_AMOUNT_RE = re.compile(r"\$?\s*\d{1,3}(?:[.’'‘]\d{3})+(?:,\d{1,2})?|\$?\s*\d+(?:,\d{1,2})?")
+
+def extract_amount_cop(text: str) -> Optional[float]:
+    candidates = _AMOUNT_RE.findall(text)
+    if not candidates:
+        return None
+    raw = max(candidates, key=len).strip().lstrip("$").strip()
+    if "," in raw:
+        integer_part, _, decimal_part = raw.rpartition(",")
+        integer_part = re.sub(r"[.’'‘]", "", integer_part)
+        try:
+            return float(f"{integer_part}.{decimal_part}")
+        except ValueError:
+            return None
+    cleaned = re.sub(r"[.’'‘]", "", raw)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 # ── Helpers ──────────────────────────────────────────────────
 def get_family_id(user_id: str) -> Optional[str]:
@@ -153,6 +210,10 @@ async def expense_from_chat(req: ExpenseFromChat, user=Depends(get_current_user)
     categories = supabase.table("expense_categories").select("id, name").eq("family_id", fid).execute().data
     cats_str = ", ".join(f"{c['name']} ({c['id']})" for c in categories)
 
+    # Pre-extraemos el monto localmente (soporta formatos colombianos como 2'982.691)
+    # para ayudar a la IA y como respaldo si la IA falla.
+    local_amount = extract_amount_cop(req.message)
+
     headers = {
         "Authorization": f"Bearer {settings.ANTHROPIC_API_KEY}",
         "Content-Type": "application/json",
@@ -167,10 +228,11 @@ async def expense_from_chat(req: ExpenseFromChat, user=Depends(get_current_user)
 
 Gasto: "{req.message}"
 Hoy: {date.today().isoformat()}
+Monto detectado automáticamente (en pesos, sin separadores): {local_amount if local_amount is not None else "desconocido"}
 Categorías disponibles: {cats_str}
 
 Reglas:
-- amount: solo el número (19000, no "19.000" ni "$19.000")
+- amount: solo el número (19000, no "19.000" ni "$19.000"). Cuidado con formatos colombianos como 2'982.691 (el apóstrofe y el punto son separadores de miles) → 2982691. Si hay duda, usa el monto detectado automáticamente.
 - payment_method: efectivo, debito, credito, transferencia u otro
 - expense_date: formato YYYY-MM-DD, usar hoy si no se menciona
 - category_id: el id de la categoría más apropiada de la lista
@@ -179,54 +241,67 @@ Reglas:
 Responde solo con este JSON (sin texto antes ni después):
 {{"amount": 0, "description": "", "place": null, "category_id": "", "payment_method": "efectivo", "expense_date": "{date.today().isoformat()}", "confidence": 1.0}}"""
         }],
-        "max_tokens": 300,
+        "max_tokens": 500,
+        "reasoning": {"enabled": False},
     }
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=500, detail="Error al procesar el gasto con IA")
-
-    resp_data = resp.json()
-    # El modelo puede usar tool_calls en vez de content directo
-    msg = resp_data["choices"][0]["message"]
-    raw = msg.get("content")
-
-    # Si el modelo no retornó content (usó tool_calls u otro), forzar segunda llamada sin tools
-    if not raw:
-        body_retry = {**body}
-        body_retry.pop("tools", None)
-        async with httpx.AsyncClient(timeout=20.0) as client2:
-            resp2 = await client2.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body_retry)
-            if resp2.status_code == 200:
-                raw = resp2.json()["choices"][0]["message"].get("content")
-
-    if not raw:
-        raise HTTPException(status_code=422, detail=f"El modelo no pudo interpretar: {req.message}")
-
-    # Limpiar y extraer JSON del texto
-    import re
-    content_clean = raw.strip()
-
-    # Quitar bloques de código markdown
-    content_clean = re.sub(r"^```(?:json)?\s*", "", content_clean)
-    content_clean = re.sub(r"\s*```$", "", content_clean).strip()
-
-    # Si todavía no parsea, buscar el primer objeto JSON en el texto
+    parsed = None
     try:
-        parsed = json.loads(content_clean)
-    except Exception:
-        # Buscar cualquier {...} en la respuesta
-        match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
-        if match:
-            try:
-                parsed = json.loads(match.group())
-            except Exception:
-                print(f"[expense_from_chat] No se pudo parsear. Raw: {repr(raw)}")
-                raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
-        else:
-            print(f"[expense_from_chat] Sin JSON en respuesta. Raw: {repr(raw)}")
-            raise HTTPException(status_code=422, detail=f"No se pudo interpretar: {req.message}")
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
+
+        if resp.status_code == 200:
+            msg = resp.json()["choices"][0]["message"]
+            raw = msg.get("content")
+
+            # Reintento simple si el modelo no devolvió content
+            if not raw:
+                async with httpx.AsyncClient(timeout=20.0) as client2:
+                    resp2 = await client2.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
+                if resp2.status_code == 200:
+                    raw = resp2.json()["choices"][0]["message"].get("content")
+
+            if raw:
+                content_clean = raw.strip()
+                content_clean = re.sub(r"^```(?:json)?\s*", "", content_clean)
+                content_clean = re.sub(r"\s*```$", "", content_clean).strip()
+                try:
+                    parsed = json.loads(content_clean)
+                except Exception:
+                    match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
+                    if match:
+                        try:
+                            parsed = json.loads(match.group())
+                        except Exception:
+                            print(f"[expense_from_chat] No se pudo parsear. Raw: {repr(raw)}")
+                    else:
+                        print(f"[expense_from_chat] Sin JSON en respuesta. Raw: {repr(raw)}")
+    except httpx.HTTPError as e:
+        print(f"[expense_from_chat] Error de red hacia la IA: {e}")
+
+    # Validar el monto que vino de la IA; si falta o no es numérico, usar el detectado localmente
+    amount_ok = False
+    if parsed is not None:
+        try:
+            float(parsed["amount"])
+            amount_ok = True
+        except (KeyError, TypeError, ValueError):
+            amount_ok = False
+
+    if not amount_ok:
+        if local_amount is None:
+            raise HTTPException(status_code=422, detail=f"No pude identificar el monto en: {req.message}")
+        parsed = parsed or {}
+        parsed["amount"] = local_amount
+        parsed.setdefault("description", req.message.strip())
+        parsed.setdefault("place", None)
+        parsed.setdefault("expense_date", date.today().isoformat())
+
+    if not parsed.get("payment_method"):
+        parsed["payment_method"] = guess_payment_method(req.message)
+    if not parsed.get("category_id"):
+        parsed["category_id"] = guess_category_id(req.message, categories)
+    parsed.setdefault("description", req.message.strip())
 
     # Guardar en BD
     result = supabase.table("expenses").insert({
