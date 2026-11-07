@@ -6,9 +6,14 @@ from typing import Optional, List
 from decimal import Decimal
 from core.supabase import supabase, get_current_user
 from core.config import settings
-import httpx, json, re
+import httpx, json, re, calendar
 
 router = APIRouter()
+
+def month_bounds(year: int, month: int) -> tuple[str, str]:
+    """Primer y último día válido del mes en formato YYYY-MM-DD."""
+    last_day = calendar.monthrange(year, month)[1]
+    return f"{year}-{month:02d}-01", f"{year}-{month:02d}-{last_day:02d}"
 
 # ── Heurísticas locales (respaldo cuando la IA falla) ────────
 PAYMENT_KEYWORDS = [
@@ -172,8 +177,7 @@ async def list_expenses(
     now = datetime.now()
     m = month or now.month
     y = year  or now.year
-    start = f"{y}-{m:02d}-01"
-    end   = f"{y}-{m:02d}-31"
+    start, end = month_bounds(y, m)
 
     query = supabase.table("expenses").select(
         "*, expense_categories(name, icon, color), profiles(full_name, avatar_url)"
@@ -453,7 +457,7 @@ async def financial_dashboard(month: Optional[int] = None, year: Optional[int] =
     fid = require_family(user)
     now = datetime.now()
     m, y = month or now.month, year or now.year
-    start, end = f"{y}-{m:02d}-01", f"{y}-{m:02d}-31"
+    start, end = month_bounds(y, m)
 
     # Ingresos del mes
     incomes = supabase.table("incomes").select("amount").eq("family_id", fid).eq("month", m).eq("year", y).execute().data
